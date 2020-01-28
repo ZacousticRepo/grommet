@@ -1,354 +1,288 @@
-import React, { useContext, useEffect, useRef, useState } from 'react';
+// (C) Copyright 2016 Hewlett Packard Enterprise Development LP
 
-import { ThemeContext } from 'styled-components';
+import React, { Component, Children } from 'react';
+import PropTypes from 'prop-types';
+import classnames from 'classnames';
+import CSSClassnames from '../../utils/CSSClassnames';
+import Intl from '../../utils/Intl';
+import { padding, debounceDelay } from './utils';
 
-import { normalizeColor, parseMetricToNum } from '../../utils';
+import Meter from '../Meter';
 
-import { StyledChart } from './StyledChart';
-import { normalizeBounds, normalizeValues } from './utils';
+import Axis from './Axis';
+import Layers from './Layers';
+import Base from './Base';
+import Grid from './Grid';
+import Area from './Area';
+import Line from './Line';
+import Bar from './Bar';
+import Marker from './Marker';
+import MarkerLabel from './MarkerLabel';
+import HotSpots from './HotSpots';
+import Range from './Range';
 
-// use constants so re-renders don't re-trigger effects
-const defaultSize = { height: 'small', width: 'medium' };
-const defaultValues = [];
+const CLASS_ROOT = CSSClassnames.CHART;
+const CHART_BASE = CSSClassnames.CHART_BASE;
 
-const Chart = React.forwardRef(
-  (
-    {
-      bounds: propsBounds,
-      color = 'accent-1',
-      gap,
-      onClick,
-      onHover,
-      overflow = false,
-      round,
-      size: propsSize = defaultSize,
-      thickness = 'medium',
-      type = 'bar',
-      values: propsValues = defaultValues,
-      ...rest
-    },
-    ref,
-  ) => {
-    const theme = useContext(ThemeContext);
-    const [values, setValues] = useState([]);
-    const [bounds, setBounds] = useState([
-      [0, 0],
-      [0, 0],
-    ]);
-    const [containerSize, setContainerSize] = useState([0, 0]);
-    const [size, setSize] = useState([0, 0]);
-    const [scale, setScale] = useState([1, 1]);
-    const [strokeWidth, setStrokeWidth] = useState(0);
-    const containerRef = ref || useRef();
-
-    // calculations
-    useEffect(() => {
-      const nextValues = normalizeValues(propsValues);
-      setValues(nextValues);
-
-      const nextBounds = normalizeBounds(propsBounds, nextValues);
-      setBounds(nextBounds);
-
-      const nextStrokeWidth = parseMetricToNum(
-        theme.global.edgeSize[thickness] || thickness,
-      );
-      setStrokeWidth(nextStrokeWidth);
-
-      const gapWidth = gap
-        ? parseMetricToNum(theme.global.edgeSize[gap] || gap)
-        : nextStrokeWidth;
-
-      // autoWidth is how wide we'd pefer
-      const autoWidth =
-        nextStrokeWidth * nextValues.length +
-        (nextValues.length - 1) * gapWidth;
-
-      const sizeWidth =
-        typeof propsSize === 'string'
-          ? propsSize
-          : propsSize.width || defaultSize.width;
-      let width;
-      if (sizeWidth === 'full') {
-        [width] = containerSize;
-      } else if (sizeWidth === 'auto') {
-        width = autoWidth;
-      } else {
-        width = parseMetricToNum(theme.global.size[sizeWidth] || sizeWidth);
-      }
-
-      const sizeHeight =
-        typeof propsSize === 'string'
-          ? propsSize
-          : propsSize.height || defaultSize.height;
-      let height;
-      if (sizeHeight === 'full') {
-        [, height] = containerSize;
-      } else {
-        height = parseMetricToNum(theme.global.size[sizeHeight] || sizeHeight);
-      }
-
-      setSize([width, height]);
-
-      const nextScale = [
-        (sizeWidth === 'auto' ? autoWidth : width) /
-          (nextBounds[0][1] - nextBounds[0][0]),
-        height / (nextBounds[1][1] - nextBounds[1][0]),
-      ];
-      setScale(nextScale);
-    }, [
-      containerSize,
-      gap,
-      propsBounds,
-      propsSize,
-      propsValues,
-      theme.global.edgeSize,
-      theme.global.size,
-      thickness,
-    ]);
-
-    // set container size when we get ref or when size changes
-    if (
-      containerRef.current &&
-      propsSize &&
-      (propsSize === 'full' ||
-        propsSize.height === 'full' ||
-        propsSize.width === 'full')
-    ) {
-      const containerNode = containerRef.current;
-      if (containerNode) {
-        const { parentNode } = containerNode;
-        if (parentNode) {
-          const rect = parentNode.getBoundingClientRect();
-          if (
-            rect.width !== containerSize[0] ||
-            rect.height !== containerSize[1]
-          ) {
-            setContainerSize([rect.width, rect.height]);
-          }
-        }
-      }
+function traverseAndUpdateChildren (children) {
+  return Children.map(children, child => {
+    if (!child || !child.type) {
+      return child;
     }
 
-    // container size, if needed
-    useEffect(() => {
-      const onResize = () => {
-        const { parentNode } = containerRef.current;
-        const rect = parentNode.getBoundingClientRect();
-        setContainerSize([rect.width, rect.height]);
-      };
-
-      if (
-        propsSize &&
-        (propsSize === 'full' ||
-          propsSize.width === 'full' ||
-          propsSize.height === 'full')
-      ) {
-        window.addEventListener('resize', onResize);
-        return () => window.removeEventListener('resize', onResize);
-      }
-      return undefined;
-    }, [containerRef, propsSize]);
-
-    const renderBars = () =>
-      (values || []).map((valueArg, index) => {
-        const { label, onHover: valueOnHover, value, ...valueRest } = valueArg;
-
-        const key = `p-${index}`;
-        const bottom = value.length === 2 ? bounds[1][0] : value[1];
-        const top = value.length === 2 ? value[1] : value[2];
-        if (top !== 0) {
-          const d =
-            `M ${(value[0] - bounds[0][0]) * scale[0]},` +
-            `${size[1] - (bottom - bounds[1][0]) * scale[1]}` +
-            ` L ${(value[0] - bounds[0][0]) * scale[0]},` +
-            `${size[1] - (top - bounds[1][0]) * scale[1]}`;
-
-          let hoverProps;
-          if (valueOnHover) {
-            hoverProps = {
-              onMouseOver: () => valueOnHover(true),
-              onMouseLeave: () => valueOnHover(false),
-            };
-          }
-
-          return (
-            <g key={key} fill="none">
-              <title>{label}</title>
-              <path d={d} {...hoverProps} {...valueRest} />
-            </g>
-          );
-        }
-        return undefined;
+    // remove tabIndex from child elements to avoid
+    // multiple tabs inside a chart
+    if (child.type === Meter || child.type.name === 'Meter' ||
+      child.type === Chart || child.type.name === 'Chart') {
+      return React.cloneElement(child, {
+        tabIndex: '-1'
       });
+    }
 
-    const renderLine = () => {
-      let d = '';
-      (values || []).forEach(({ value }, index) => {
-        d +=
-          `${index ? ' L' : 'M'} ${(value[0] - bounds[0][0]) * scale[0]},` +
-          `${size[1] - (value[1] - bounds[1][0]) * scale[1]}`;
-      });
-
-      let hoverProps;
-      if (onHover) {
-        hoverProps = {
-          onMouseOver: () => onHover(true),
-          onMouseLeave: () => onHover(false),
-        };
-      }
-      let clickProps;
-      if (onClick) {
-        clickProps = { onClick };
-      }
-
-      return (
-        <g fill="none">
-          <path d={d} {...hoverProps} {...clickProps} />
-        </g>
+    if (child.props.children) {
+      const childrenNoTabIndex = traverseAndUpdateChildren(
+        child.props.children
       );
-    };
 
-    const renderArea = () => {
-      let d = '';
-      (values || []).forEach(({ value }, index) => {
-        const top = value.length === 2 ? value[1] : value[2];
-        d +=
-          `${!index ? 'M' : ' L'} ${(value[0] - bounds[0][0]) * scale[0]},` +
-          `${size[1] - (top - bounds[1][0]) * scale[1]}`;
+      return React.cloneElement(child, {
+        children: childrenNoTabIndex
       });
-      (values || []).reverse().forEach(({ value }) => {
-        const bottom = value.length === 2 ? bounds[1][0] : value[1];
-        d +=
-          ` L ${(value[0] - bounds[0][0]) * scale[0]},` +
-          `${size[1] - (bottom - bounds[1][0]) * scale[1]}`;
-      });
-      if (d.length > 0) {
-        d += ' Z';
-      }
+    }
+    return child;
+  });
+}
 
-      let hoverProps;
-      if (onHover) {
-        hoverProps = {
-          onMouseOver: () => onHover(true),
-          onMouseLeave: () => onHover(false),
-        };
-      }
-      let clickProps;
-      if (onClick) {
-        clickProps = { onClick };
-      }
+export default class Chart extends Component {
 
-      return (
-        <g fill={normalizeColor(color.color || color, theme)}>
-          <path d={d} {...hoverProps} {...clickProps} />
-        </g>
-      );
-    };
+  constructor(props, context) {
+    super(props, context);
+    this._onResize = this._onResize.bind(this);
+    this._layout = this._layout.bind(this);
+    this.state = { alignTop: 0, alignLeft: 0, alignHeight: 0, alignWidth: 0 };
+  }
 
-    const renderPoints = () =>
-      (values || []).map((valueArg, index) => {
-        const { label, onHover: valueOnHover, value, ...valueRest } = valueArg;
+  componentDidMount () {
+    window.addEventListener('resize', this._onResize);
+    // Give sometime for the ui to render. Why is this needed though?
+    setTimeout(this._layout, 150);
+  }
 
-        const key = `p-${index}`;
+  componentWillReceiveProps (nextProps) {
+    // Always layout when new props come. This takes care of a contained
+    // Base having children that change.
+    this.setState({ layoutNeeded: true });
+  }
 
-        let hoverProps;
-        if (valueOnHover) {
-          hoverProps = {
-            onMouseOver: () => valueOnHover(true),
-            onMouseLeave: () => valueOnHover(false),
-          };
+  componentDidUpdate () {
+    if (this.state.layoutNeeded) {
+      this._layout();
+      this.setState({ layoutNeeded: false });
+    }
+  }
+
+  componentWillUnmount () {
+    window.removeEventListener('resize', this._onResize);
+  }
+
+  _onResize () {
+    // debounce
+    clearTimeout(this._resizeTimer);
+    this._resizeTimer = setTimeout(this._layout, debounceDelay);
+  }
+
+  _layout () {
+    const { horizontalAlignWith, verticalAlignWith, vertical,
+      onMaxCount } = this.props;
+    const chart = this.chartRef;
+    if (chart) {
+      const chartRect = chart.getBoundingClientRect();
+      const base = this.chartRef.querySelector(`.${CHART_BASE}`);
+      let alignWidth, alignLeft, alignRight, alignHeight, alignTop, alignBottom;
+      let padAlign = true;
+
+      if (horizontalAlignWith) {
+        const elem = document.getElementById(horizontalAlignWith);
+        if (elem) {
+          const rect = elem.getBoundingClientRect();
+          alignWidth = rect.width;
+          alignLeft = rect.left - chartRect.left;
+          alignRight = chartRect.right - rect.right;
+          padAlign = false;
         }
+      } else if (base) {
+        const rect = base.getBoundingClientRect();
+        alignWidth = rect.width;
+        alignLeft = rect.left - chartRect.left;
+        alignRight = chartRect.right - rect.right;
+      }
 
-        const center = value.length === 2 ? value[1] : value[2];
-        let shape;
-        if (round) {
-          const cx = (value[0] - bounds[0][0]) * scale[0];
-          const cy = size[1] - (center - bounds[1][0]) * scale[1];
-          shape = (
-            <circle
-              cx={cx}
-              cy={cy}
-              r={strokeWidth / 2}
-              {...hoverProps}
-              {...valueRest}
-            />
-          );
+      if (verticalAlignWith) {
+        const elem = document.getElementById(verticalAlignWith);
+        if (elem) {
+          const rect = elem.getBoundingClientRect();
+          alignHeight = rect.height;
+          alignTop = rect.top - chartRect.top;
+          alignBottom = chartRect.bottom - rect.bottom;
+          padAlign = false;
+        }
+      } else if (base) {
+        const rect = base.getBoundingClientRect();
+        alignHeight = rect.height;
+        alignTop = rect.top - chartRect.top;
+        alignBottom = chartRect.bottom - rect.bottom;
+      }
+
+      this.setState({
+        alignWidth: alignWidth,
+        alignLeft: alignLeft,
+        alignRight: alignRight,
+        alignHeight: alignHeight,
+        alignTop: alignTop,
+        alignBottom: alignBottom,
+        padAlign: padAlign
+      });
+
+      if (onMaxCount) {
+        let maxCount;
+        if (vertical) {
+          maxCount = Math.floor(alignWidth / (4 * padding));
         } else {
-          const x = (value[0] - bounds[0][0]) * scale[0] - strokeWidth / 2;
-          const y =
-            size[1] - (center - bounds[1][0]) * scale[1] - strokeWidth / 2;
-          shape = (
-            <rect
-              x={x}
-              y={y}
-              width={strokeWidth}
-              height={strokeWidth}
-              {...hoverProps}
-              {...valueRest}
-            />
-          );
+          maxCount = Math.floor(alignHeight / (4 * padding));
+        }
+        if (maxCount !== this.state.maxCount) {
+          this.setState({ maxCount: maxCount }, () => {
+            onMaxCount(maxCount);
+          });
+        }
+      }
+    }
+  }
+
+  render () {
+    const {
+      a11yTitle, className, full, loading, vertical, ...props
+    } = this.props;
+    delete props.horizontalAlignWith;
+    delete props.onMaxCount;
+    delete props.verticalAlignWith;
+    const { alignBottom, alignHeight, alignLeft, alignRight, alignTop,
+      alignWidth, padAlign } = this.state;
+    const { intl } = this.context;
+    const classes = classnames(
+      CLASS_ROOT,
+      {
+        [`${CLASS_ROOT}--full`]: full,
+        [`${CLASS_ROOT}--loading`]: loading,
+        [`${CLASS_ROOT}--vertical`]: vertical
+      },
+      className
+    );
+
+    // Align Axis children towards the Base|Layers|Chart
+    let axisAlign = 'end';
+    let children = Children.map(this.props.children, child => {
+
+      // name comparison is to work around webpack alias issues in development
+      if (child && (
+        child.type === Axis || child.type.name === 'Axis' ||
+        child.type === MarkerLabel || child.type.name === 'MarkerLabel'
+        )) {
+
+        if (vertical) {
+          child = React.cloneElement(child, {
+            style: {
+              marginLeft: padAlign ? alignLeft + padding : alignLeft,
+              marginRight: padAlign ? alignRight + padding : alignRight
+            },
+            align: axisAlign
+          });
+        } else {
+          child = React.cloneElement(child, {
+            style: {
+              // We set the height just for Safari due to:
+              // http://stackoverflow.com/questions/35532987/
+              //    heights-rendering-differently-in-chrome-and-firefox/
+              //    35537510#35537510
+              // Chrome seems to have addressed this already.
+              height: padAlign ? alignHeight - (2 * padding) : alignHeight,
+              marginTop: padAlign ? alignTop + padding : alignTop,
+              marginBottom: padAlign ? alignBottom + padding : alignBottom
+            },
+            align: axisAlign
+          });
         }
 
-        return (
-          <g key={key} stroke="none">
-            <title>{label}</title>
-            {shape}
-          </g>
-        );
-      });
+      } else if (child &&
+        (child.type === Layers || child.type.name === 'Layers')) {
 
-    let contents;
-    if (type === 'bar') {
-      contents = renderBars();
-    } else if (type === 'line') {
-      contents = renderLine();
-    } else if (type === 'area') {
-      contents = renderArea();
-    } else if (type === 'point') {
-      contents = renderPoints();
+        child = React.cloneElement(child, {
+          height: alignHeight,
+          width: alignWidth,
+          style: { left: alignLeft, top: alignTop }
+        });
+        axisAlign = 'start';
+
+      } else if (child && (
+        child.type === Chart || child.type.name === 'Chart' ||
+        child.type === Base || child.type.name === 'Base'
+      )) {
+
+        if (child.type === Base) {
+          const updatedChildren = traverseAndUpdateChildren(
+            child.props.children
+          );
+
+          child = React.cloneElement(child, {
+            children: updatedChildren
+          });
+        } else {
+          child = React.cloneElement(child, {
+            tabIndex: '-1'
+          });
+        }
+
+        axisAlign = 'start';
+      }
+
+      return child;
+    });
+
+    if (loading) {
+      children.push(
+        <svg key="loading" className={classes}
+          viewBox={`0 0 ${alignWidth} ${alignHeight}`}>
+          <path d={`M0,${alignHeight / 2} L${alignWidth},${alignHeight / 2}`} />
+        </svg>
+      );
     }
 
-    const viewBox = overflow
-      ? `0 0 ${size[0]} ${size[1]}`
-      : `-${strokeWidth / 2} -${strokeWidth / 2} ${size[0] +
-          strokeWidth} ${size[1] + strokeWidth}`;
-    const colorName = typeof color === 'object' ? color.color : color;
-    const opacity = color.opacity
-      ? theme.global.opacity[color.opacity]
-      : undefined;
+    const ariaLabel = (
+      a11yTitle || Intl.getMessage(intl, 'Chart')
+    );
 
     return (
-      <StyledChart
-        ref={containerRef}
-        viewBox={viewBox}
-        preserveAspectRatio="none"
-        width={size === 'full' ? '100%' : size[0]}
-        height={size === 'full' ? '100%' : size[1]}
-        {...rest}
-      >
-        <g
-          stroke={
-            type !== 'point' ? normalizeColor(colorName, theme) : undefined
-          }
-          strokeWidth={type !== 'point' ? strokeWidth : undefined}
-          fill={type === 'point' ? normalizeColor(colorName, theme) : undefined}
-          strokeLinecap={round ? 'round' : 'butt'}
-          strokeLinejoin={round ? 'round' : 'miter'}
-          opacity={opacity}
-        >
-          {contents}
-        </g>
-      </StyledChart>
+      <div ref={ref => this.chartRef = ref} {...props} className={classes}
+        aria-label={ariaLabel} role="group">
+        {children}
+      </div>
     );
-  },
-);
+  }
 
-Chart.displayName = 'Chart';
-
-let ChartDoc;
-if (process.env.NODE_ENV !== 'production') {
-  ChartDoc = require('./doc').doc(Chart); // eslint-disable-line global-require
 }
-const ChartWrapper = ChartDoc || Chart;
 
-export { ChartWrapper as Chart };
+Chart.contextTypes = {
+  intl: PropTypes.object
+};
+
+Chart.propTypes = {
+  a11yTitle: PropTypes.string,
+  full: PropTypes.bool,
+  horizontalAlignWith: PropTypes.string,
+  loading: PropTypes.bool,
+  onMaxCount: PropTypes.func,
+  vertical: PropTypes.bool,
+  verticalAlignWith: PropTypes.string
+};
+
+export { Axis, Layers, Base, Grid, Area, Line, Bar, Marker, MarkerLabel,
+  HotSpots, Range };

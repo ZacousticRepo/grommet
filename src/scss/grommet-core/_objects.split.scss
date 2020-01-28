@@ -1,0 +1,51 @@
+// (C) Copyright 2014-2016 Hewlett Packard Enterprise Development LP
+
+.#{$grommet-namespace}split {
+  position: relative;
+  overflow: visible;
+
+  @include media-query(lap-and-up) {
+    display: flex;
+    flex-direction: row;
+  }
+}
+
+.#{$grommet-namespace}split__column {
+  flex: 0 0 auto;
+}
+
+div.#{$grommet-namespace}split__column--hidden {
+  display: none;
+}
+
+.#{$grommet-namespace}split__column--fixed {
+  @include media-query(lap-and-up) {
+    position: relative;
+    overflow: auto;
+    -ms-overflow-style: -ms-autohiding-scrollbar;
+  }
+}
+
+.#{$grommet-namespace}split__column--flex {
+  @include media-query(lap-and-up) {
+    display: flex;
+    flex: 1 1 auto;
+  }
+}
+
+.#{$grommet-namespace}split__column--flex-block {
+  @include media-query(lap-and-up) {
+    display: block;
+    flex: 1 1 auto;
+  }
+}
+
+.#{$grommet-namespace}split__column--separator {
+  @include media-query(lap-and-up) {
+    border-right: 1px solid $strong-border-color;
+  }
+
+  @include media-query(palm) {
+    border-bottom: 1px solid $strong-border-color;
+  }
+}

@@ -1,103 +1,77 @@
-import React from 'react';
-import { compose } from 'recompose';
+// (C) Copyright 2014-2016 Hewlett Packard Enterprise Development LP
 
-import { withTheme } from 'styled-components';
+import { baseUnit } from '../../utils/Graphics';
+import { baseDimension } from './utils';
+import Graphic from './Graphic';
 
-import { defaultProps } from '../../default-props';
-import { parseMetricToNum } from '../../utils';
+const BAR_LENGTH = baseDimension;
+const BAR_THICKNESS = baseUnit;
+const MID_BAR_THICKNESS = BAR_THICKNESS / 2;
+// const MINIMUM_THICKNESS = BAR_THICKNESS / 6;
 
-import { StyledMeter } from './StyledMeter';
-import { strokeProps, defaultColor } from './utils';
+export default class Bar extends Graphic {
 
-const Bar = props => {
-  const {
-    background,
-    max,
-    round,
-    size,
-    theme,
-    thickness,
-    values,
-    ...rest
-  } = props;
-  const width =
-    size === 'full' ? 288 : parseMetricToNum(theme.global.size[size] || size);
-  const height = parseMetricToNum(
-    theme.global.edgeSize[thickness] || thickness,
-  );
-  // account for the round cap, if any
-  const capOffset = round ? height / 2 : 0;
-  const mid = height / 2;
-  const someHighlight = (values || []).some(v => v.highlight);
+  constructor(props, context) {
+    super(props, context);
+    //needed in Graphic.js to fix minification issues
+    this.displayName = 'Bar';
+  }
 
-  let start = capOffset;
-  const paths = (values || [])
-    .filter(v => v.value > 0)
-    .map((valueArg, index) => {
-      const { color, highlight, label, onHover, value, ...pathRest } = valueArg;
-
-      const key = `p-${index}`;
-      const delta = (value * (width - 2 * capOffset)) / max;
-      const d = `M ${start},${mid} L ${start + delta},${mid}`;
-      const colorName =
-        color ||
-        (index === values.length - 1
-          ? theme.meter.color
-          : defaultColor(index, theme));
-      let hoverProps;
-      if (onHover) {
-        hoverProps = {
-          onMouseOver: () => onHover(true),
-          onMouseLeave: () => onHover(false),
-        };
+  _viewBoxDimensions (props) {
+    let viewBoxHeight;
+    let viewBoxWidth;
+    if (props.vertical) {
+      if (props.stacked) {
+        viewBoxWidth = BAR_THICKNESS;
+      } else {
+        viewBoxWidth = BAR_THICKNESS * Math.max(1, props.series.length);
       }
-      start += delta;
+      viewBoxHeight = BAR_LENGTH;
+    } else {
+      viewBoxWidth = BAR_LENGTH;
+      if (props.stacked) {
+        viewBoxHeight = BAR_THICKNESS;
+      } else {
+        viewBoxHeight = BAR_THICKNESS * Math.max(1, props.series.length);
+      }
+    }
+    return [viewBoxWidth, viewBoxHeight];
+  }
 
-      return (
-        <path
-          key={key}
-          d={d}
-          fill="none"
-          {...strokeProps(
-            someHighlight && !highlight ? background : colorName,
-            theme,
-          )}
-          strokeWidth={height}
-          strokeLinecap={round ? 'round' : 'butt'}
-          {...hoverProps}
-          {...pathRest}
-        />
-      );
-    })
-    .reverse(); // reverse so the caps looks right
+  _stateFromProps (props) {
+    const viewBoxDimensions = this._viewBoxDimensions(props);
 
-  return (
-    <StyledMeter
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      width={size === 'full' ? '100%' : width}
-      height={height}
-      round={round ? { size: thickness } : undefined}
-      {...rest}
-    >
-      <path
-        d={`M ${capOffset},${mid} L ${width - capOffset},${mid}`}
-        fill="none"
-        {...strokeProps(background, theme)}
-        strokeWidth={height}
-        strokeLinecap={round ? 'round' : 'square'}
-      />
-      {paths}
-    </StyledMeter>
-  );
-};
+    const state = {
+      scale: BAR_LENGTH / (props.max - props.min),
+      viewBoxWidth: viewBoxDimensions[0],
+      viewBoxHeight: viewBoxDimensions[1]
+    };
 
-Bar.defaultProps = {
-  background: 'light-1',
-};
+    return state;
+  }
 
-Object.setPrototypeOf(Bar.defaultProps, defaultProps);
+  _translateBarWidth (value) {
+    return Math.ceil(this.state.scale * value);
+  }
 
-const BarWrapper = compose(withTheme)(Bar);
+  _sliceCommands (trackIndex, item, startValue) {
+    const value = item.value - this.props.min;
+    const start = this._translateBarWidth(startValue);
+    const distance = this._translateBarWidth(value);
+    // const distance = Math.max((item.value > 0 ? MINIMUM_THICKNESS : 0),
+    //   this._translateBarWidth(value));
+    let commands;
+    let spot = (trackIndex * BAR_THICKNESS) + MID_BAR_THICKNESS;
+    if (this.props.vertical) {
+      commands = "M" + spot + "," + (BAR_LENGTH - start) +
+        " L" + spot + "," + (BAR_LENGTH - (start + distance));
+    } else {
+      commands = "M" + start + "," + spot +
+        " L" + (start + distance) + "," + spot;
+    }
+    return commands;
+  }
+}
 
-export { BarWrapper as Bar };
+//needed in Graphic.js to fix minification issues
+Bar.displayName = 'Bar';

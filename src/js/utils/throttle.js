@@ -1,20 +1,20 @@
 // (C) Copyright 2014-2016 Hewlett Packard Enterprise Development LP
 
-export const throttle = (fn, threshhold = 250, scope = this) => {
+export default function (fn, threshhold = 250, scope = this) {
   let last;
   let deferTimer;
 
-  return (...args) => {
-    const now = Date.now();
+  return function () {
+    let now = Date.now();
     if (last && now < last + threshhold) {
       clearTimeout(deferTimer);
-      deferTimer = setTimeout(() => {
+      deferTimer = setTimeout(function () {
         last = now;
-        fn.apply(scope, args);
+        fn.apply(scope, arguments);
       }, threshhold);
     } else {
       last = now;
-      fn.apply(scope, args);
+      fn.apply(scope, arguments);
     }
   };
-};
+}

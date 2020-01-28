@@ -1,48 +1,64 @@
-export const normalizeValues = values =>
-  (values || []).map((value, index) => {
-    if (Array.isArray(value)) {
-      return { value };
-    }
-    if (typeof value === 'number') {
-      return { value: [index, value] };
-    }
-    return value;
-  });
+// (C) Copyright 2014-2016 Hewlett Packard Enterprise Development LP
 
-export const normalizeBounds = (bounds, values) => {
-  let result = bounds;
-  if (!result) {
-    result = [[0, 1], [0, 1]];
-    (values || []).forEach(value => {
-      result[0][0] = Math.min(result[0][0], value.value[0]);
-      result[0][1] = Math.max(result[0][1], value.value[0]);
-      result[1][0] = Math.min(result[1][0], value.value[1]);
-      result[1][1] = Math.max(result[1][1], value.value[1]);
-    });
+export function graphValue (value, min, max, size) {
+  const scale = size / (max - min);
+  return Math.floor(scale * (value - min));
+};
+
+export var pointSize = 12;
+export var padding = (pointSize / 2) + 2;
+export var debounceDelay = 50;
+
+export class trackSize {
+
+  constructor (props, onSize) {
+    this._onResize = this._onResize.bind(this);
+    this._measure = this._measure.bind(this);
+    this._width = props.width;
+    this._height = props.height;
+    this._size = { width: props.width || 0, height: props.height || 0 };
+    this._onSize = onSize;
   }
-  return result;
-};
 
-export const areNormalizedValuesEquals = (valuesX, valuesY) => {
-  if (!valuesX || !valuesY) return false;
+  _measure () {
+    if (this._element) {
+      const rect = this._element.getBoundingClientRect();
+      this._size.width = this._width || Math.round(rect.width);
+      this._size.height = this._height || Math.round(rect.height);
+      this._onSize(this._size);
+    }
+  }
 
-  if (valuesX.length !== valuesY.length) return false;
+  _onResize () {
+    // debounce
+    clearTimeout(this._resizeTimer);
+    // delay should be greater than Chart's delay
+    this._resizeTimer = setTimeout(this._measure, debounceDelay + 10);
+  }
 
-  if (valuesX.length === 0) return true;
+  size () {
+    return this._size;
+  }
 
-  if (!valuesX[0].value || !valuesY[0].value) return false;
+  start (element) {
+    this._element = element;
+    if (! this._width || ! this._height) {
+      window.addEventListener('resize', this._onResize);
+      // delay just a bit to allow the browser to lay things out
+      setTimeout(this._measure.bind(this), 3);
+    }
+  }
 
-  return valuesX.every((_, i) =>
-    valuesX[i].value.every((value, index) => value === valuesY[i].value[index]),
-  );
-};
+  reset (props) {
+    this._width = props.width;
+    this._height = props.height;
+    this._size.width = props.width || this._size.width;
+    this._size.height = props.height || this._size.height;
+    this._onSize(this._size);
+  }
 
-export const areNormalizedBoundsEquals = (boundsX, boundsY) => {
-  if (!boundsX || !boundsY) return false;
-
-  if (boundsX.length !== boundsY.length || !(boundsX.length > 0)) return false;
-
-  return boundsX.every((_, i) =>
-    boundsX[i].every((value, index) => value === boundsY[i][index]),
-  );
-};
+  stop () {
+    window.removeEventListener('resize', this._onResize);
+    this._element = undefined;
+  }
+}
